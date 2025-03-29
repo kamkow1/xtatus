@@ -1,0 +1,3 @@
+#!/bin/bash
+read -ra ADDR <<< $(free -g | sed -n '2p')
+echo "$(printf '%s' ${ADDR[2]})GB / $(printf '%s' ${ADDR[1]})GB"

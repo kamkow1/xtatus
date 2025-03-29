@@ -3,9 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <time.h>
 #include <unistd.h>
 #include <errno.h>
 #include <libgen.h>
+#include <pthread.h>
 
 #include "raylib.h"
 #include "subprocess.h"
@@ -35,8 +37,23 @@
     } while(0)
 
 typedef struct {
+    char **items;
+    size_t count, capacity;
+} Out_Lines;
+
+#define out_lines_free(ol) \
+    do { \
+        for (int i = 0; i < (ol)->count; i++) { \
+            free((void*)(ol)->items[i]); \
+        } \
+        list_free((ol)); \
+    } while (0)
+
+typedef struct {
     long long interval;
     char *path;
+    pthread_t thread;
+    Out_Lines out_lines;
 } Script;
 
 typedef struct {
@@ -72,12 +89,16 @@ bool change_cwd(void)
     return true;
 }
 
+#define MAX_SCRIPT_LINE 500
+#define FONT_SIZE       20
+#define PADDING         30
+
 static Font font;
 static Scripts scripts = {0};
 
 void init_assets(void)
 {
-    font = LoadFont("./assets/fonts/SpaceMono-Regular.ttf");
+    font = LoadFontEx("./assets/fonts/SpaceMono-Regular.ttf", FONT_SIZE, NULL, 0);
 }
 
 void deinit_assets(void)
@@ -131,17 +152,54 @@ void deinit_scripts(void)
 {
     for (int i = 0; i < scripts.count; i++) {
         free((void*)scripts.items[i].path);
+        out_lines_free(&scripts.items[i].out_lines);
     }
     list_free(&scripts);
+}
+
+void *do_script(void *arg)
+{
+    Script *script = (Script *)arg;
+
+    clock_t start = clock();
+    for (;;) {
+        clock_t end = clock();
+        float seconds = (float)(end - start) / CLOCKS_PER_SEC;
+        if ((long long)seconds == script->interval) {
+            struct subprocess_s sp;
+            const char *commandline[] = { script->path, NULL };
+            int result = subprocess_create(commandline, 0, &sp);
+            if (result != 0) {
+                log_err("Script %s failed\n", script->path);
+            } else {
+                script->out_lines.count = 0;
+                FILE *pstdout = subprocess_stdout(&sp);
+                char line[MAX_SCRIPT_LINE];
+                while (fgets(line, sizeof(line), pstdout) != NULL) {
+                    char *line_copy = malloc(strlen(line)+1);
+                    strcpy(line_copy, line);
+                    list_append(&script->out_lines, line_copy);
+                }
+            }
+            
+            start = clock();
+        }
+    }
+    return NULL;
 }
 
 int main(void)
 {
     change_cwd();
     init_scripts();
+    
+    for (int i = 0; i < scripts.count; i++) {
+        pthread_create(&scripts.items[i].thread, NULL, &do_script, &scripts.items[i]);
+    }
 
     SetConfigFlags(FLAG_WINDOW_UNDECORATED);
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "xtatus");
+    SetExitKey(KEY_NULL);
 
     init_assets();
 
@@ -149,9 +207,22 @@ int main(void)
         BeginDrawing();
 
         ClearBackground(BLACK);
-        DrawTextEx(font, "Hello world", (Vector2){20, 20}, 20, 0, WHITE);
+        int y = 0;
+        for (int i = 0; i < scripts.count; i++) {
+            Script *script = &scripts.items[i];
+            for (int j = 0; j < script->out_lines.count; j++) {
+                char *line = script->out_lines.items[j];
+                Vector2 position = { PADDING, PADDING + FONT_SIZE * y };
+                DrawTextEx(font, line, position, FONT_SIZE, 0.0f, WHITE);
+                y++;
+            }
+        }
 
         EndDrawing();
+    }
+    
+    for (int i = 0; i < scripts.count; i++) {
+        pthread_join(scripts.items[i].thread, NULL);
     }
 
     deinit_scripts();
