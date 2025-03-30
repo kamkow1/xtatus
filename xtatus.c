@@ -66,6 +66,7 @@ typedef struct {
     char *program;
     int window_x, window_y;
     int window_width, window_height;
+    bool transparent;
 } Options;
 
 bool change_cwd(void)
@@ -105,11 +106,12 @@ static Options options = {
     .window_height = 600,
     .window_x = -1,
     .window_y = -1,
+    .transparent = true,
 };
 
 void init_assets(void)
 {
-    font = LoadFontEx("./assets/fonts/SpaceMono-Regular.ttf", FONT_SIZE, NULL, 0);
+    font = LoadFontEx("./assets/fonts/SpaceMono-Regular.ttf", FONT_SIZE*5, NULL, 0);
 }
 
 void deinit_assets(void)
@@ -227,7 +229,8 @@ void usage(void)
     log_info("%-30s %-20s\n", "-wx", "Windwo x position");
     log_info("%-30s %-20s\n", "-wy", "Windwo y position");
     log_info("%-30s %-20s\n", "-ww", "Windwo width");
-    log_info("%-30s %-20s\n", "-wy", "Windwo height");
+    log_info("%-30s %-20s\n", "-wh", "Windwo height");
+    log_info("%-30s %-20s\n", "-nt", "Make background not transparent");
 }
 
 #define shift(argc, argv) \
@@ -248,6 +251,8 @@ int main(int argc, char ** argv)
             options.window_width = atoi(shift(argc, argv));
         } else if (strcmp(opt_name, "-wh") == 0) {
             options.window_height = atoi(shift(argc, argv));
+        } else if (strcmp(opt_name, "-nt") == 0) {
+            options.transparent = false;
         } else {
             log_err("Unknown option %s\n", opt_name);
             exit(1);
@@ -261,7 +266,12 @@ int main(int argc, char ** argv)
         pthread_create(&scripts.items[i].thread, NULL, &do_script, &scripts.items[i]);
     }
 
-    SetConfigFlags(FLAG_WINDOW_UNDECORATED);
+    unsigned int flags = FLAG_WINDOW_UNDECORATED;
+    if (options.transparent) {
+        flags |= FLAG_WINDOW_TRANSPARENT;
+    }
+
+    SetConfigFlags(flags);
     InitWindow(options.window_width, options.window_height, "xtatus");
     SetExitKey(KEY_NULL);
 
@@ -275,15 +285,18 @@ int main(int argc, char ** argv)
         options.window_y = (GetMonitorHeight(m)-options.window_height)/2;
     }
 
+    RenderTexture2D target = LoadRenderTexture(options.window_width, options.window_height);
+
+    SetTargetFPS(60);
     while (!WindowShouldClose()) {
         Vector2 win_pos = GetWindowPosition();
         if (win_pos.x != options.window_x || win_pos.y != options.window_y) {
             SetWindowPosition(options.window_x, options.window_y);
         }
 
-        BeginDrawing();
+        BeginTextureMode(target);
 
-        ClearBackground(BLACK);
+        ClearBackground(BLANK);
         int y = 0;
         pthread_mutex_lock(&scripts_lock);
         for (int i = 0; i < scripts.count; i++) {
@@ -300,6 +313,18 @@ int main(int argc, char ** argv)
         }
         pthread_mutex_unlock(&scripts_lock);
 
+        EndTextureMode();
+
+        BeginDrawing();
+        ClearBackground(BLANK);
+        DrawTexturePro(
+                target.texture,
+                (Rectangle){0, 0, options.window_width, -options.window_height},
+                (Rectangle){0, 0, options.window_width, options.window_height},
+                (Vector2){0, 0},
+                0.0f,
+                WHITE
+        );
         EndDrawing();
     }
     
