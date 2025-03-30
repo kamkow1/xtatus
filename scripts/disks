@@ -1,0 +1,2 @@
+#!/bin/bash
+findmnt -lv --real --output "FSROOT,SOURCE,TARGET,FSTYPE,OPTIONS" | awk 'NR>1{print $3}' | xargs df | awk '{print $1 " " $6 " " $5}' | column -t
