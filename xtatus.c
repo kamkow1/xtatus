@@ -62,8 +62,11 @@ typedef struct {
     size_t capacity, count;
 } Scripts;
 
-#define WINDOW_WIDTH    400
-#define WINDOW_HEIGHT   600
+typedef struct {
+    char *program;
+    int window_x, window_y;
+    int window_width, window_height;
+} Options;
 
 bool change_cwd(void)
 {
@@ -97,6 +100,12 @@ bool change_cwd(void)
 static Font font;
 static Scripts scripts = {0};
 static pthread_mutex_t scripts_lock;
+static Options options = {
+    .window_width = 300,
+    .window_height = 600,
+    .window_x = -1,
+    .window_y = -1,
+};
 
 void init_assets(void)
 {
@@ -212,8 +221,39 @@ void *do_script(void *arg)
     return NULL;
 }
 
-int main(void)
+void usage(void)
 {
+    log_info("Usage: %s -[OPTIONS]\n", options.program);
+    log_info("%-30s %-20s\n", "-wx", "Windwo x position");
+    log_info("%-30s %-20s\n", "-wy", "Windwo y position");
+    log_info("%-30s %-20s\n", "-ww", "Windwo width");
+    log_info("%-30s %-20s\n", "-wy", "Windwo height");
+}
+
+#define shift(argc, argv) \
+    (argc <= 0 ? (log_err("Not enough arguments\n"), usage(), exit(1)) : (void)0, --argc, *argv++)
+
+int main(int argc, char ** argv)
+{
+    options.program = shift(argc, argv);
+
+    while (argc > 0) {
+        char *opt_name = shift(argc, argv);
+
+        if (strcmp(opt_name, "-wx") == 0) {
+            options.window_x = atoi(shift(argc, argv));
+        } else if (strcmp(opt_name, "-wy") == 0) {
+            options.window_y = atoi(shift(argc, argv));
+        } else if (strcmp(opt_name, "-ww") == 0) {
+            options.window_width = atoi(shift(argc, argv));
+        } else if (strcmp(opt_name, "-wh") == 0) {
+            options.window_height = atoi(shift(argc, argv));
+        } else {
+            log_err("Unknown option %s\n", opt_name);
+            exit(1);
+        }
+    }
+
     change_cwd();
     init_scripts();
     
@@ -222,12 +262,25 @@ int main(void)
     }
 
     SetConfigFlags(FLAG_WINDOW_UNDECORATED);
-    InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "xtatus");
+    InitWindow(options.window_width, options.window_height, "xtatus");
     SetExitKey(KEY_NULL);
 
     init_assets();
+    
+    int m = GetCurrentMonitor();
+    if (options.window_x == -1) {
+        options.window_x = (GetMonitorWidth(m)-options.window_width)/2;
+    }
+    if (options.window_y == -1) {
+        options.window_y = (GetMonitorHeight(m)-options.window_height)/2;
+    }
 
     while (!WindowShouldClose()) {
+        Vector2 win_pos = GetWindowPosition();
+        if (win_pos.x != options.window_x || win_pos.y != options.window_y) {
+            SetWindowPosition(options.window_x, options.window_y);
+        }
+
         BeginDrawing();
 
         ClearBackground(BLACK);
@@ -242,7 +295,7 @@ int main(void)
                 y++;
             }
             Vector2 position1 = { PADDING, PADDING + FONT_SIZE * y };
-            Vector2 position2 = { WINDOW_WIDTH - PADDING, PADDING + FONT_SIZE * y };
+            Vector2 position2 = { options.window_width - PADDING, PADDING + FONT_SIZE * y };
             DrawLineV(position1, position2, ORANGE);
         }
         pthread_mutex_unlock(&scripts_lock);
