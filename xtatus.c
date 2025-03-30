@@ -180,22 +180,30 @@ void *do_script(void *arg)
             const char *commandline[] = { script->path, NULL };
             int result = subprocess_create(commandline, 0, &sp);
             if (result != 0) {
-                log_err("Script %s failed\n", script->path);
+                log_err("Could not create subprocess for %s\n", script->path);
             } else {
-                pthread_mutex_lock(&scripts_lock);
+                int proc_return;
+                result = subprocess_join(&sp, &proc_return);
+                if (result != 0) {
+                    log_err("Could not wait for subprocess %s\n", script->path);
+                } else if (proc_return == 0) {
+                    pthread_mutex_lock(&scripts_lock);
 
-                script->out_lines.count = 0;
-                if (script->first_run) script->first_run = false;
+                    script->out_lines.count = 0;
+                    if (script->first_run) script->first_run = false;
 
-                FILE *pstdout = subprocess_stdout(&sp);
-                char line[MAX_SCRIPT_LINE];
-                while (fgets(line, sizeof(line), pstdout) != NULL) {
-                    char *line_copy = malloc(strlen(line)+1);
-                    strcpy(line_copy, line);
-                    list_append(&script->out_lines, line_copy);
+                    FILE *pstdout = subprocess_stdout(&sp);
+                    char line[MAX_SCRIPT_LINE];
+                    while (fgets(line, sizeof(line), pstdout) != NULL) {
+                        char *line_copy = malloc(strlen(line)+1);
+                        strcpy(line_copy, line);
+                        list_append(&script->out_lines, line_copy);
+                    }
+
+                    pthread_mutex_unlock(&scripts_lock);
+                } else {
+                    log_err("Script %s failed\n", script->path);
                 }
-
-                pthread_mutex_unlock(&scripts_lock);
             }
             
             start = clock();
