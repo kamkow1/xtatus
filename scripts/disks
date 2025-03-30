@@ -1,4 +1,5 @@
 #!/bin/bash
+echo "Mounted filesystems"
 findmnt -lv --real --output "FSROOT,SOURCE,TARGET,FSTYPE,OPTIONS" \
     | awk 'NR>1{print $3}' \
     | xargs df \
