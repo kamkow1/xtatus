@@ -1,4 +1,6 @@
 #!/bin/bash
 echo "Network speed"
 NETWORK=$(ip addr show | awk '/inet.*brd/{print $NF; exit}')
-awk '{if(l1){printf "Down: %.2f kB/s, Up: %.2f kB/s",($2-l1)/1024,($10-l2)/1024} else{l1=$2; l2=$10;}}' <(grep $NETWORK /proc/net/dev) <(sleep 1; grep $NETWORK /proc/net/dev)
+awk '{if(l1){printf "Down: %.2f kB/s, Up: %.2f kB/s",($2-l1)/1024,($10-l2)/1024} else{l1=$2; l2=$10;}}' \
+    <(grep $NETWORK /proc/net/dev) \
+    <(sleep 1; grep $NETWORK /proc/net/dev)
