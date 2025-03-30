@@ -233,6 +233,9 @@ int main(void)
                 DrawTextEx(font, line, position, FONT_SIZE, 0.0f, WHITE);
                 y++;
             }
+            Vector2 position1 = { PADDING, PADDING + FONT_SIZE * y };
+            Vector2 position2 = { WINDOW_WIDTH - PADDING, PADDING + FONT_SIZE * y };
+            DrawLineV(position1, position2, ORANGE);
         }
         pthread_mutex_unlock(&scripts_lock);
 
