@@ -54,6 +54,7 @@ typedef struct {
     char *path;
     pthread_t thread;
     Out_Lines out_lines;
+    bool first_run;
 } Script;
 
 typedef struct {
@@ -95,6 +96,7 @@ bool change_cwd(void)
 
 static Font font;
 static Scripts scripts = {0};
+static pthread_mutex_t scripts_lock;
 
 void init_assets(void)
 {
@@ -128,6 +130,7 @@ void init_scripts(void)
         char *line = malloc(strlen(p)+1);
         strcpy(line, p);
         Script script;
+        script.first_run = true;
 
         char *interval_string = strtok_r(line, " ", &saveptr2);
         script.interval = atoll(interval_string);
@@ -146,6 +149,11 @@ void init_scripts(void)
     for (int i = 0; i < scripts.count; i++) {
         log_info("Script %d %s\n", scripts.items[i].interval, scripts.items[i].path);
     }
+
+    if (pthread_mutex_init(&scripts_lock, NULL) != 0) {
+        log_err("scripts_lock init failed\n");
+        exit(1);
+    }
 }
 
 void deinit_scripts(void)
@@ -155,6 +163,8 @@ void deinit_scripts(void)
         out_lines_free(&scripts.items[i].out_lines);
     }
     list_free(&scripts);
+
+    pthread_mutex_destroy(&scripts_lock);
 }
 
 void *do_script(void *arg)
@@ -165,14 +175,18 @@ void *do_script(void *arg)
     for (;;) {
         clock_t end = clock();
         float seconds = (float)(end - start) / CLOCKS_PER_SEC;
-        if ((long long)seconds == script->interval) {
+        if ((long long)seconds == script->interval || script->first_run) {
             struct subprocess_s sp;
             const char *commandline[] = { script->path, NULL };
             int result = subprocess_create(commandline, 0, &sp);
             if (result != 0) {
                 log_err("Script %s failed\n", script->path);
             } else {
+                pthread_mutex_lock(&scripts_lock);
+
                 script->out_lines.count = 0;
+                if (script->first_run) script->first_run = false;
+
                 FILE *pstdout = subprocess_stdout(&sp);
                 char line[MAX_SCRIPT_LINE];
                 while (fgets(line, sizeof(line), pstdout) != NULL) {
@@ -180,6 +194,8 @@ void *do_script(void *arg)
                     strcpy(line_copy, line);
                     list_append(&script->out_lines, line_copy);
                 }
+
+                pthread_mutex_unlock(&scripts_lock);
             }
             
             start = clock();
@@ -208,6 +224,7 @@ int main(void)
 
         ClearBackground(BLACK);
         int y = 0;
+        pthread_mutex_lock(&scripts_lock);
         for (int i = 0; i < scripts.count; i++) {
             Script *script = &scripts.items[i];
             for (int j = 0; j < script->out_lines.count; j++) {
@@ -217,6 +234,7 @@ int main(void)
                 y++;
             }
         }
+        pthread_mutex_unlock(&scripts_lock);
 
         EndDrawing();
     }
