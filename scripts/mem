@@ -1,3 +1,11 @@
 #!/bin/bash
-read -ra ADDR <<< $(free -g | sed -n '2p')
-echo "mem:" "$(printf '%s' ${ADDR[2]})GB / $(printf '%s' ${ADDR[1]})GB"
+
+echo "mem:" $(awk '
+        BEGIN { total=0; free=0 }
+        /MemTotal:/ { total=$2; }
+        /MemFree:/ { free+=$2; }
+        /Buffers:/ { free+=$2; }
+        /Cached:/ { free+=$2; }
+        /MemAvailable:/ { free=$2; exit; }
+        END { printf "%.2fGB / %.2fGB",(total-free)/1000000,total/1000000 }
+    ' /proc/meminfo)
